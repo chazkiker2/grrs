@@ -16,6 +16,22 @@ struct Cli {
     path: PathBuf,
 }
 
+fn log_matches<I>(
+    content: I,
+    pattern: &str,
+    mut writer: impl Write,
+) -> Result<()>
+    where I: Iterator<Item=Result<String, std::io::Error>>
+{
+    for line in content {
+        let line = line.unwrap();
+        if line.contains(&pattern) {
+            writeln!(writer, "{}", line)?;
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args: Cli = Cli::from_args();
     env_logger::init();
@@ -27,18 +43,13 @@ fn main() -> Result<()> {
     let file = File::open(args.path)
         .with_context(|| format!("could not read file `{}`", path.display()))?;
 
-    // wrap `stdout` in `BufWriter` for performant printing
+    // wrap `stdout` in `BufWriter` for higher performance printing
     let stdout = io::stdout();
     let mut handle = io::BufWriter::new(stdout);
 
     // read file and write (to wrapped `stdout`) all lines which match the given pattern
     let reader = BufReader::new(file);
-    for line in reader.lines() {
-        let line = line.unwrap();
-        if line.contains(&args.pattern) {
-            writeln!(handle, "{}", line)?;
-        }
-    }
+    log_matches(reader.lines(), &args.pattern, &mut handle)?;
 
     // print all matching lines
     handle.flush().unwrap();
@@ -47,3 +58,19 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn sanity_check() {
+    assert_eq!(42, 42)
+}
+
+#[test]
+fn find_a_match() {
+    let mut result = Vec::new();
+    let file = File::open("test.txt");
+    assert!(file.is_ok());
+
+    let reader = BufReader::new(file.unwrap());
+    let response = log_matches(reader.lines(), "in", &mut result);
+    assert!(response.is_ok());
+    assert_eq!(result, b"This is inside test.txt!\n");
+}
